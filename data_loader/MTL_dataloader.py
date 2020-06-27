@@ -13,6 +13,10 @@ class MTL_generatot(tensorflow.keras.utils.Sequence):
 
         self.seg_generator = Segmentation_gen
         self.det_generator = detection_gen
+        
+        self.seg_itterator = self.seg_generator.__iter__()
+        self.det_itterator = self.det_generator.__iter__()
+        
         self.nb_iteration = nb_iteration
         self.batch_size = batch_size
         self.batch_number = 0
@@ -20,13 +24,12 @@ class MTL_generatot(tensorflow.keras.utils.Sequence):
     def __len__(self):
         'Denotes the number of batches per epoch'
         return self.nb_iteration
-
+        
     def __getitem__(self, index):
         'Generate one batch of data'
         # Generate indexes of the batch
         # Generate data
         X, y = self.__data_generation(index)
-
         return X, y
 
     def __data_generation(self, index):
@@ -34,15 +37,36 @@ class MTL_generatot(tensorflow.keras.utils.Sequence):
         # Initialization
 
         if self.batch_number % 2 == 0:
-            X, Y_seg = next(iter(self.seg_generator))
-            Y_class = [[0, 1, 0]] * self.batch_size
+            try:
+                X, Y_seg = next(self.seg_itterator)
+            except:
+                self.seg_itterator = self.seg_generator.__iter__()
+                X, Y_seg = next(self.seg_itterator)
+                
+            Y_class= []
+            for yy in Y_seg:
+                if np.sum(yy)==0:
+                    Y_class.append([1,0,0])
+                else:
+                    Y_class.append([0, 1, 0])
+                    
             Y_class = np.array(Y_class)
             Y_seg= np.array(Y_seg)
             Y_det = np.ones([self.batch_size,8,8,5,6])*-1
 
         else:
-            X, Y_det = next(iter(self.det_generator))
-            Y_class = [[0, 0, 1]] * self.batch_size
+            try:
+                X, Y_det = next(self.det_itterator)
+            except:
+                self.det_itterator = self.det_generator.__iter__()
+                X, Y_det = next(self.det_itterator)
+                
+            Y_class= []
+            for yy in Y_det:
+                if np.sum(yy)==0:
+                    Y_class.append([1,0,0])
+                else:
+                    Y_class.append([0, 0, 1])
             Y_class = np.array(Y_class)
             Y_det= np.array(Y_det)
             Y_seg = np.ones([self.batch_size,256,256,1])*-1
@@ -52,7 +76,7 @@ class MTL_generatot(tensorflow.keras.utils.Sequence):
         return X, [Y_class, Y_det, Y_seg]
 
 def get_train_validation_generator(det_csv_path,seg_csv_path , det_img_path, seg_img_path ,batch_size=8, dim=(256,256), n_channels=3,
-                  shuffle=True ,preprocess = None , only_positive=True, validation_split=0.2 ):
+                  shuffle=True ,preprocess = None , only_positive=True, validation_split=0.2,augmentation=False,normalize=False,hist_eq=False ):
 
 
 
@@ -62,6 +86,9 @@ def get_train_validation_generator(det_csv_path,seg_csv_path , det_img_path, seg
                                                                                 n_channels=n_channels, shuffle=shuffle,
                                                                                 preprocess=preprocess,
                                                                                 only_positive=only_positive,
+                                                                                augmentation=augmentation,
+                                                                                normalize=normalize,
+                                                                                hist_eq=hist_eq,
                                                                                 validation_split=validation_split)
 
     det_train_gen, det_valid_gen = detection_get_train_validation_generator(det_csv_path, det_img_path,
@@ -69,6 +96,9 @@ def get_train_validation_generator(det_csv_path,seg_csv_path , det_img_path, seg
                                                                                 n_channels=n_channels, shuffle=shuffle,
                                                                                 preprocess=preprocess,
                                                                                 only_positive=only_positive,
+                                                                                augmentation=augmentation,
+                                                                                normalize=normalize,
+                                                                                hist_eq=hist_eq,
                                                                                 validation_split=validation_split)
 
     MTL_train_gen = MTL_generatot(seg_train_gen, det_train_gen , seg_train_gen.nb_iteration+det_train_gen.nb_iteration ,batch_size=batch_size )

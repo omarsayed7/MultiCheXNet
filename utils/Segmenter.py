@@ -8,6 +8,7 @@ class Segmenter(ModelBlock):
     def __init__(self, encoder):
         self.encoder = encoder.model
         self.model = self.make_model()
+        self.focal_loss= binary_focal_loss()
         #self.num_layers = ModelBlock.get_head_num_layers(encoder, self.model)
 
     def dense_block(self, x, blocks, name):
@@ -35,9 +36,10 @@ class Segmenter(ModelBlock):
             Output tensor for the block.
         """
         bn_axis = 3
+        x1 = Dropout(0.2, name=name + '_0_drop')(x)
         x1 = BatchNormalization(axis=bn_axis,
                                        epsilon=1.001e-5,
-                                       name=name + '_0_bn')(x)
+                                       name=name + '_0_bn')(x1)
         x1 = Activation('relu', name=name + '_0_relu')(x1)
         x1 = Conv2D(4 * growth_rate, 1,
                            use_bias=False,
@@ -89,6 +91,34 @@ class Segmenter(ModelBlock):
         return dice_loss(y_true, y_pred)
 
 
+def binary_focal_loss(gamma=2., alpha=.25):
+    """
+    Binary form of focal loss.
+      FL(p_t) = -alpha * (1 - p_t)**gamma * log(p_t)
+      where p = sigmoid(x), p_t = p or 1 - p depending on if the label is 1 or 0, respectively.
+    References:
+        https://arxiv.org/pdf/1708.02002.pdf
+    Usage:
+     model.compile(loss=[binary_focal_loss(alpha=.25, gamma=2)], metrics=["accuracy"], optimizer=adam)
+    """
+    def binary_focal_loss_fixed(y_true, y_pred):
+        """
+        :param y_true: A tensor of the same shape as `y_pred`
+        :param y_pred:  A tensor resulting from a sigmoid
+        :return: Output tensor.
+        """
+        pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+        pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
+
+        epsilon = K.epsilon()
+        # clip to prevent NaN's and Inf's
+        pt_1 = K.clip(pt_1, epsilon, 1. - epsilon)
+        pt_0 = K.clip(pt_0, epsilon, 1. - epsilon)
+
+        return -K.mean(alpha * K.pow(1. - pt_1, gamma) * K.log(pt_1)) \
+               -K.mean((1 - alpha) * K.pow(pt_0, gamma) * K.log(1. - pt_0))
+
+    return binary_focal_loss_fixed
         
 #refrence: https://gist.github.com/wassname/7793e2058c5c9dacb5212c0ac0b18a8a
 def dice_loss(y_true, y_pred):

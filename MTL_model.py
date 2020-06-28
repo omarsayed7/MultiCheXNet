@@ -36,7 +36,7 @@ class MTL_model():
             if classification_loss!=None:
                 classification_loss = classification_loss
             else:
-                classification_loss = self.classifier.loss()
+                classification_loss = self.classifier.loss
             combined_losses.append(classification_loss)
 
         if self.add_detector_head:
@@ -44,7 +44,7 @@ class MTL_model():
                 detector_loss= detector_loss
             else:
                 detector_loss = self.detector.loss
-            combined_losses.append.append(detector_loss)
+            combined_losses.append(detector_loss)
 
         if self.add_segmenter_head:
             if segmenter_loss!=None:

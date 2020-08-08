@@ -8,11 +8,14 @@ from .RSNA_dataloader import get_train_validation_generator as detection_get_tra
 class MTL_generatot(tensorflow.keras.utils.Sequence):
     'Generates data from a Dataframe'
 
-    def __init__(self, Segmentation_gen, detection_gen , nb_iteration,batch_size):
+    def __init__(self, Segmentation_gen, detection_gen , nb_iteration,batch_size,gen_type):
         'Initialization'
 
         self.seg_generator = Segmentation_gen
         self.det_generator = detection_gen
+        
+        self.gen_type=gen_type
+        self.first_flag=0
         
         self.seg_itterator = self.seg_generator.__iter__()
         self.det_itterator = self.det_generator.__iter__()
@@ -35,48 +38,83 @@ class MTL_generatot(tensorflow.keras.utils.Sequence):
     def __data_generation(self, index):
         'Generates data containing batch_size samples'  # X : (n_samples, *dim, n_channels)
         # Initialization
+        if self.gen_type=='train':
+            if self.batch_number % 2 == 0:
+                try:
+                    X, Y_seg = next(self.seg_itterator)
+                except:
+                    self.seg_itterator = self.seg_generator.__iter__()
+                    X, Y_seg = next(self.seg_itterator)
 
-        if self.batch_number % 2 == 0:
-            try:
-                X, Y_seg = next(self.seg_itterator)
-            except:
-                self.seg_itterator = self.seg_generator.__iter__()
-                X, Y_seg = next(self.seg_itterator)
-                
-            Y_class= []
-            for yy in Y_seg:
-                if np.sum(yy)==0:
-                    Y_class.append([1,0,0])
-                else:
-                    Y_class.append([0, 1, 0])
+                Y_class= []
+                for yy in Y_seg:
+                    if np.sum(yy)==0:
+                        Y_class.append([1,0,0])
+                    else:
+                        Y_class.append([0, 1, 0])
+
+                Y_class = np.array(Y_class)
+                Y_seg= np.array(Y_seg)
+                Y_det = np.ones([self.batch_size,8,8,5,6])*-1
+
+            else:
+                try:
+                    X, Y_det = next(self.det_itterator)
+                except:
+                    self.det_itterator = self.det_generator.__iter__()
+                    X, Y_det = next(self.det_itterator)
+
+                Y_class= []
+                for yy in Y_det:
+                    if np.sum(yy)==0:
+                        Y_class.append([1,0,0])
+                    else:
+                        Y_class.append([0, 0, 1])
+                Y_class = np.array(Y_class)
+                Y_det= np.array(Y_det)
+                Y_seg = np.ones([self.batch_size,256,256,1])*-1
+
+            self.batch_number += 1
+        
+        if self.gen_type=='val':
+            if self.first_flag==0:
+                try:
+                    X, Y_seg = next(self.seg_itterator)
+                    Y_class= []
+                    for yy in Y_seg:
+                        if np.sum(yy)==0:
+                            Y_class.append([1,0,0])
+                        else:
+                            Y_class.append([0, 1, 0])
+
+                    Y_class = np.array(Y_class)
+                    Y_seg= np.array(Y_seg)
+                    Y_det = np.ones([self.batch_size,8,8,5,6])*-1
+                except:
+                    self.first_flag=1
+                    self.seg_itterator = self.seg_generator.__iter__()
                     
-            Y_class = np.array(Y_class)
-            Y_seg= np.array(Y_seg)
-            Y_det = np.ones([self.batch_size,8,8,5,6])*-1
-
-        else:
-            try:
-                X, Y_det = next(self.det_itterator)
-            except:
-                self.det_itterator = self.det_generator.__iter__()
-                X, Y_det = next(self.det_itterator)
-                
-            Y_class= []
-            for yy in Y_det:
-                if np.sum(yy)==0:
-                    Y_class.append([1,0,0])
-                else:
-                    Y_class.append([0, 0, 1])
-            Y_class = np.array(Y_class)
-            Y_det= np.array(Y_det)
-            Y_seg = np.ones([self.batch_size,256,256,1])*-1
-
-        self.batch_number += 1
+            if self.first_flag==1:
+                try:
+                    X, Y_det = next(self.det_itterator)
+                    Y_class= []
+                    for yy in Y_det:
+                        if np.sum(yy)==0:
+                            Y_class.append([1,0,0])
+                        else:
+                            Y_class.append([0, 0, 1])
+                    Y_class = np.array(Y_class)
+                    Y_det= np.array(Y_det)
+                    Y_seg = np.ones([self.batch_size,256,256,1])*-1
+                except:
+                    self.first_flag=0
+                    self.det_itterator = self.det_generator.__iter__()
+   
 
         return X, [Y_class, Y_det, Y_seg]
 
 def get_train_validation_generator(det_csv_path,seg_csv_path , det_img_path, seg_img_path ,batch_size=8, dim=(256,256), n_channels=3,
-                  shuffle=True ,preprocess = None , only_positive=True, validation_split=0.2,augmentation=False,normalize=False,hist_eq=False ):
+                  shuffle=True ,preprocess = None , only_positive=True, validation_split=0.2,augmentation=False,normalize=False,hist_eq=False,batch_positive_portion=None ):
 
 
 
@@ -89,7 +127,7 @@ def get_train_validation_generator(det_csv_path,seg_csv_path , det_img_path, seg
                                                                                 augmentation=augmentation,
                                                                                 normalize=normalize,
                                                                                 hist_eq=hist_eq,
-                                                                                validation_split=validation_split)
+                                                                                validation_split=validation_split,batch_positive_portion=batch_positive_portion)
 
     det_train_gen, det_valid_gen = detection_get_train_validation_generator(det_csv_path, det_img_path,
                                                                                 batch_size=batch_size, dim=dim,
@@ -99,10 +137,10 @@ def get_train_validation_generator(det_csv_path,seg_csv_path , det_img_path, seg
                                                                                 augmentation=augmentation,
                                                                                 normalize=normalize,
                                                                                 hist_eq=hist_eq,
-                                                                                validation_split=validation_split)
+                                                                                validation_split=validation_split,batch_positive_portion=batch_positive_portion)
 
-    MTL_train_gen = MTL_generatot(seg_train_gen, det_train_gen , seg_train_gen.nb_iteration+det_train_gen.nb_iteration ,batch_size=batch_size )
-    MTL_valid_gen = MTL_generatot(seg_valid_gen, det_valid_gen, seg_valid_gen.nb_iteration + det_valid_gen.nb_iteration , batch_size=batch_size)
+    MTL_train_gen = MTL_generatot(seg_train_gen, det_train_gen , seg_train_gen.nb_iteration+det_train_gen.nb_iteration ,batch_size=batch_size , gen_type='train')
+    MTL_valid_gen = MTL_generatot(seg_valid_gen, det_valid_gen, seg_valid_gen.nb_iteration + det_valid_gen.nb_iteration , batch_size=batch_size, gen_type='val')
 
     return MTL_train_gen, MTL_valid_gen
 

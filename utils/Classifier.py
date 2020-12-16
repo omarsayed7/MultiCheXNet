@@ -2,6 +2,7 @@ from .ModelBlock import ModelBlock
 from tensorflow.keras.layers import Flatten,Input,Dense, GlobalAveragePooling2D , Dropout
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.losses import categorical_crossentropy
+import tensorflow as tf
 
 class Classifier(ModelBlock):
     def __init__(self, encoder):
@@ -24,4 +25,8 @@ class Classifier(ModelBlock):
 
         return X
     def loss(self,y_true,y_pred):
-        return categorical_crossentropy(y_true,y_pred)
+        return tf.cond(
+                    tf.math.reduce_all(tf.math.equal(y_true,-1))
+                    ,true_fn=  lambda: tf.convert_to_tensor(0, dtype=tf.float32)
+                    ,false_fn= lambda: categorical_crossentropy(y_true,y_pred)
+                    )

@@ -114,14 +114,19 @@ class Detector(ModelBlock):
         return model_out
     
     @tf.function
-    def loss(self, y_true, y_pred):
-        if tf.math.reduce_all(tf.math.equal(y_true,-1)):
-            return  tf.convert_to_tensor(0, dtype=tf.float32)
-        return self.yolo_loss( y_true, y_pred)
+    def loss(self, y_true, y_pred):    
+        return tf.cond(
+                    tf.math.reduce_all(tf.math.equal(y_true,-1))
+                    ,true_fn=  lambda: tf.convert_to_tensor(0, dtype=tf.float32)
+                    ,false_fn= lambda: self.yolo_loss( y_true, y_pred)
+                    )
     
     def yolo_loss(self, y_true, y_pred):
         n_cells = y_pred.get_shape().as_list()[1]
         y_true = tf.reshape(y_true, tf.shape(y_pred), name='y_true')
+        # line added to solve error
+        y_true = tf.cast(y_true,dtype=tf.float32)
+        
         y_pred = tf.identity(y_pred, name='y_pred')
         
         TINY_YOLOV2_ANCHOR_PRIORS = tf.convert_to_tensor(self.anchors, dtype= tf.float32)
@@ -139,7 +144,7 @@ class Detector(ModelBlock):
 
         # compute bb width and height
         predicted_wh = TINY_YOLOV2_ANCHOR_PRIORS * tf.exp(y_pred[..., 2:4])
-
+        
         # compute predicted bb center and width
         predicted_min = predicted_xy - predicted_wh / 2
         predicted_max = predicted_xy + predicted_wh / 2
@@ -156,6 +161,7 @@ class Detector(ModelBlock):
         true_max = true_xy + true_wh / 2
 
         #### compute iou between ground truth and predicted (used for objectedness) ####
+        
         intersect_mins = tf.maximum(predicted_min, true_min)
         intersect_maxes = tf.minimum(predicted_max, true_max)
         intersect_wh = tf.maximum(intersect_maxes - intersect_mins, 0.)
@@ -163,7 +169,7 @@ class Detector(ModelBlock):
 
         true_areas = true_wh[..., 0] * true_wh[..., 1]
         pred_areas = predicted_wh[..., 0] * predicted_wh[..., 1]
-
+        
         union_areas = pred_areas + true_areas - intersect_areas
         iou_scores = intersect_areas / union_areas
 
